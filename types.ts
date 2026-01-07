@@ -20,6 +20,7 @@ export interface Person {
   id: string;
   name: string;
   color: string;
+  paid?: boolean; // Tracking payment status
 }
 
 export interface Receipt {
