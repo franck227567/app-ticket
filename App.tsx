@@ -45,17 +45,41 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const saveToHistory = (newReceipt: Receipt, participantsCount: number) => {
+  const saveToHistory = (newReceipt: Receipt, currentPeople: Person[]) => {
     const entry: HistoryItem = {
       id: newReceipt.id,
       date: newReceipt.date,
       storeName: newReceipt.storeName,
       total: newReceipt.totalOnTicket,
-      participantsCount
+      participantsCount: currentPeople.length,
+      receipt: newReceipt,
+      people: currentPeople
     };
-    const updatedHistory = [entry, ...history].slice(0, 10);
+    
+    // Si ya existe (estamos actualizando pagos), lo reemplazamos
+    const exists = history.find(h => h.id === newReceipt.id);
+    let updatedHistory;
+    if (exists) {
+      updatedHistory = history.map(h => h.id === newReceipt.id ? entry : h);
+    } else {
+      updatedHistory = [entry, ...history].slice(0, 20);
+    }
+    
     setHistory(updatedHistory);
     localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(updatedHistory));
+  };
+
+  const deleteFromHistory = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const updatedHistory = history.filter(h => h.id !== id);
+    setHistory(updatedHistory);
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(updatedHistory));
+  };
+
+  const openHistoryItem = (item: HistoryItem) => {
+    setReceipt(item.receipt);
+    setPeople(item.people);
+    setStep(AppStep.VIEW_ONLY);
   };
 
   // Actions
@@ -129,7 +153,13 @@ const App: React.FC = () => {
   };
 
   const togglePaid = (personId: string) => {
-    setPeople(people.map(p => p.id === personId ? { ...p, paid: !p.paid } : p));
+    const updatedPeople = people.map(p => p.id === personId ? { ...p, paid: !p.paid } : p);
+    setPeople(updatedPeople);
+    
+    // Si estamos en modo visualización, guardamos el cambio automáticamente
+    if (step === AppStep.VIEW_ONLY && receipt) {
+      saveToHistory(receipt, updatedPeople);
+    }
   };
 
   const toggleItemAssignment = (itemId: string, personId: string) => {
@@ -254,7 +284,7 @@ const App: React.FC = () => {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between px-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                <div className="flex items-center gap-2"><History size={12} /> Historial</div>
+                <div className="flex items-center gap-2"><History size={12} /> Historial Reciente</div>
               </div>
               {history.length === 0 ? (
                 <div className="py-12 border border-slate-800 rounded-3xl flex flex-col items-center text-slate-500 gap-2 bg-slate-900/20">
@@ -262,19 +292,31 @@ const App: React.FC = () => {
                   <p className="text-sm">Tus splits anteriores aparecerán aquí</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 pb-8">
                   {history.map(item => (
-                    <div key={item.id} className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4 flex items-center justify-between">
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-slate-100">{item.storeName}</h4>
+                    <div 
+                      key={item.id} 
+                      onClick={() => openHistoryItem(item)}
+                      className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4 flex items-center justify-between group active:bg-slate-800 transition-colors"
+                    >
+                      <div className="space-y-1 flex-1">
+                        <h4 className="font-bold text-slate-100 group-hover:text-indigo-400 transition-colors">{item.storeName}</h4>
                         <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
                           <span>{item.date}</span>
                           <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
                           <span>{item.participantsCount} personas</span>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-money text-lg text-indigo-400">€{item.total.toFixed(2)}</div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="font-money text-lg text-indigo-400">€{item.total.toFixed(2)}</div>
+                        </div>
+                        <button 
+                          onClick={(e) => deleteFromHistory(e, item.id)}
+                          className="p-2 text-slate-700 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -497,9 +539,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {step === AppStep.SUMMARY && receipt && (
+      {(step === AppStep.SUMMARY || step === AppStep.VIEW_ONLY) && receipt && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 px-6 flex flex-col">
-          {renderHeader("Resumen Final", () => setStep(AppStep.SPLIT))}
+          {renderHeader(step === AppStep.VIEW_ONLY ? "Historial" : "Resumen Final", () => setStep(step === AppStep.VIEW_ONLY ? AppStep.HISTORY : AppStep.SPLIT))}
           
           <div className="bg-white text-slate-900 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col">
             <div className="p-8 pb-4 text-center border-b border-dashed border-slate-200">
@@ -559,7 +601,7 @@ const App: React.FC = () => {
                   <span className="text-slate-600">{receipt.currency}{totalPaidByPeople.toFixed(2)}</span>
                 </div>
                 
-                {Math.abs(receipt.totalOnTicket - totalPaidByPeople) > 0.01 && (
+                {step === AppStep.SUMMARY && Math.abs(receipt.totalOnTicket - totalPaidByPeople) > 0.01 && (
                   <div className="flex flex-col gap-3 p-4 bg-indigo-600 text-white rounded-2xl shadow-lg animate-pulse">
                     <div className="flex justify-between items-center uppercase font-black text-xs">
                       <span>IVA / DIFERENCIA</span>
@@ -596,19 +638,21 @@ const App: React.FC = () => {
           <div className="mt-8 space-y-4">
             <button 
               onClick={() => { 
-                saveToHistory(receipt, people.length); 
+                if (step === AppStep.SUMMARY) saveToHistory(receipt, people); 
                 setStep(AppStep.HISTORY); 
               }} 
               className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black text-xl italic tracking-tight indigo-glow shadow-xl"
             >
-              FINALIZAR Y GUARDAR
+              {step === AppStep.VIEW_ONLY ? "VOLVER AL INICIO" : "FINALIZAR Y GUARDAR"}
             </button>
-            <button 
-              onClick={() => setStep(AppStep.SPLIT)}
-              className="w-full py-2 text-slate-500 font-bold uppercase tracking-widest text-[10px]"
-            >
-              Revisar Asignaciones
-            </button>
+            {step === AppStep.SUMMARY && (
+              <button 
+                onClick={() => setStep(AppStep.SPLIT)}
+                className="w-full py-2 text-slate-500 font-bold uppercase tracking-widest text-[10px]"
+              >
+                Revisar Asignaciones
+              </button>
+            )}
           </div>
         </div>
       )}

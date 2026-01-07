@@ -5,7 +5,8 @@ export enum AppStep {
   EDIT = 'EDIT',
   PEOPLE = 'PEOPLE',
   SPLIT = 'SPLIT',
-  SUMMARY = 'SUMMARY'
+  SUMMARY = 'SUMMARY',
+  VIEW_ONLY = 'VIEW_ONLY'
 }
 
 export interface ReceiptItem {
@@ -38,4 +39,6 @@ export interface HistoryItem {
   storeName: string;
   total: number;
   participantsCount: number;
+  receipt: Receipt;
+  people: Person[];
 }
