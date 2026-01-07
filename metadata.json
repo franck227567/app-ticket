@@ -1,5 +1,5 @@
 {
-  "name": "SplitTicket AI",
+  "name": "1100-SplitTicket AI",
   "description": "Premium Dark UI for splitting restaurant and store receipts using Gemini AI extraction.",
   "requestFramePermissions": [
     "camera"

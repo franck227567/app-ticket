@@ -31,6 +31,7 @@ export interface Receipt {
   items: ReceiptItem[];
   totalOnTicket: number;
   currency: string;
+  base64Image?: string; // Original ticket image
 }
 
 export interface HistoryItem {

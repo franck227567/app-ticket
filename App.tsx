@@ -19,7 +19,11 @@ import {
   Wallet,
   AlertCircle,
   MessageCircle,
-  CheckCircle2
+  CheckCircle2,
+  Share2,
+  Image as ImageIcon,
+  Maximize2,
+  X
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -32,6 +36,7 @@ const App: React.FC = () => {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showFullImage, setShowFullImage] = useState(false);
 
   // Persistence
   useEffect(() => {
@@ -56,7 +61,6 @@ const App: React.FC = () => {
       people: currentPeople
     };
     
-    // Si ya existe (estamos actualizando pagos), lo reemplazamos
     const exists = history.find(h => h.id === newReceipt.id);
     let updatedHistory;
     if (exists) {
@@ -82,7 +86,6 @@ const App: React.FC = () => {
     setStep(AppStep.VIEW_ONLY);
   };
 
-  // Actions
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -95,8 +98,9 @@ const App: React.FC = () => {
       const reader = new FileReader();
       reader.onload = async () => {
         try {
-          const base64 = (reader.result as string).split(',')[1];
-          const data = await extractReceiptData(base64);
+          const base64Full = reader.result as string;
+          const base64Data = base64Full.split(',')[1];
+          const data = await extractReceiptData(base64Data);
           
           const newReceipt: Receipt = {
             id: crypto.randomUUID(),
@@ -104,6 +108,7 @@ const App: React.FC = () => {
             storeName: data.storeName || 'Unknown Store',
             currency: data.currency || '€',
             totalOnTicket: data.totalOnTicket || 0,
+            base64Image: base64Full, // Save full base64 for display
             items: (data.items || []).map(item => ({
               ...item,
               id: crypto.randomUUID(),
@@ -155,8 +160,6 @@ const App: React.FC = () => {
   const togglePaid = (personId: string) => {
     const updatedPeople = people.map(p => p.id === personId ? { ...p, paid: !p.paid } : p);
     setPeople(updatedPeople);
-    
-    // Si estamos en modo visualización, guardamos el cambio automáticamente
     if (step === AppStep.VIEW_ONLY && receipt) {
       saveToHistory(receipt, updatedPeople);
     }
@@ -205,7 +208,7 @@ const App: React.FC = () => {
     }, 0);
   };
 
-  const shareByWhatsApp = (person: Person) => {
+  const shareReceipt = async (person: Person) => {
     if (!receipt) return;
     const total = getPersonTotal(person.id);
     const assignedItems = receipt.items.filter(item => item.assignedTo.includes(person.id));
@@ -219,12 +222,29 @@ const App: React.FC = () => {
     });
     
     message += `\n*TOTAL A PAGAR: ${receipt.currency}${total.toFixed(2)}*`;
-    
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+
+    try {
+      if (navigator.share && receipt.base64Image) {
+        const res = await fetch(receipt.base64Image);
+        const blob = await res.blob();
+        const file = new File([blob], `ticket-${receipt.storeName.replace(/\s/g, '_')}.jpg`, { type: 'image/jpeg' });
+
+        await navigator.share({
+          files: [file],
+          title: 'Resumen de Ticket',
+          text: message
+        });
+      } else {
+        const encodedMessage = encodeURIComponent(message);
+        window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+      }
+    } catch (err) {
+      console.error("Error sharing", err);
+      const encodedMessage = encodeURIComponent(message);
+      window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
+    }
   };
 
-  // Suma real de lo que la gente está pagando ahora mismo
   const totalPaidByPeople = useMemo(() => {
     return people.reduce((acc, p) => acc + getPersonTotal(p.id), 0);
   }, [receipt, people]);
@@ -245,7 +265,6 @@ const App: React.FC = () => {
     setReceipt({ ...receipt, items: [...updatedItems, adjustmentItem] });
   };
 
-  // Rendering Helpers
   const renderHeader = (title: string, onBack?: () => void) => (
     <div className="flex items-center gap-4 px-6 py-8">
       {onBack && (
@@ -299,12 +318,19 @@ const App: React.FC = () => {
                       onClick={() => openHistoryItem(item)}
                       className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-4 flex items-center justify-between group active:bg-slate-800 transition-colors"
                     >
-                      <div className="space-y-1 flex-1">
-                        <h4 className="font-bold text-slate-100 group-hover:text-indigo-400 transition-colors">{item.storeName}</h4>
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
-                          <span>{item.date}</span>
-                          <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
-                          <span>{item.participantsCount} personas</span>
+                      <div className="flex items-center gap-4 flex-1">
+                        {item.receipt.base64Image && (
+                          <div className="w-10 h-10 rounded-lg overflow-hidden border border-slate-700 shrink-0">
+                            <img src={item.receipt.base64Image} className="w-full h-full object-cover grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 transition-all" alt="ticket" />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-slate-100 group-hover:text-indigo-400 transition-colors">{item.storeName}</h4>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
+                            <span>{item.date}</span>
+                            <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
+                            <span>{item.participantsCount} personas</span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -541,7 +567,7 @@ const App: React.FC = () => {
 
       {(step === AppStep.SUMMARY || step === AppStep.VIEW_ONLY) && receipt && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 px-6 flex flex-col">
-          {renderHeader(step === AppStep.VIEW_ONLY ? "Historial" : "Resumen Final", () => setStep(step === AppStep.VIEW_ONLY ? AppStep.HISTORY : AppStep.SPLIT))}
+          {renderHeader(step === AppStep.VIEW_ONLY ? "Detalles de Cuenta" : "Resumen Final", () => setStep(step === AppStep.VIEW_ONLY ? AppStep.HISTORY : AppStep.SPLIT))}
           
           <div className="bg-white text-slate-900 rounded-3xl shadow-2xl relative overflow-hidden flex flex-col">
             <div className="p-8 pb-4 text-center border-b border-dashed border-slate-200">
@@ -576,10 +602,10 @@ const App: React.FC = () => {
                           {total.toFixed(2)}
                         </div>
                         <button 
-                          onClick={() => shareByWhatsApp(person)}
-                          className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                          onClick={() => shareReceipt(person)}
+                          className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                         >
-                          <MessageCircle size={20} />
+                          <Share2 size={20} />
                         </button>
                       </div>
                     </div>
@@ -588,7 +614,7 @@ const App: React.FC = () => {
               })}
             </div>
 
-            <div className="px-8 py-8 bg-slate-50 mt-auto relative">
+            <div className="px-8 py-8 bg-slate-50 relative">
               <div className="absolute top-0 left-0 right-0 h-2 flex overflow-hidden -translate-y-full opacity-10">
                 {[...Array(20)].map((_, i) => (
                   <div key={i} className="w-4 h-4 bg-slate-900 rotate-45 -translate-y-1/2 shrink-0"></div>
@@ -628,6 +654,24 @@ const App: React.FC = () => {
               </div>
             </div>
 
+            {/* Ticket Original movido al final del total */}
+            {receipt.base64Image && (
+              <div className="px-8 pb-8 pt-6 bg-slate-100/50 border-t border-slate-200">
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                   <ImageIcon size={12} /> Ticket Original
+                </div>
+                <div 
+                  className="relative h-32 rounded-2xl overflow-hidden cursor-pointer group shadow-inner border border-slate-200 bg-white"
+                  onClick={() => setShowFullImage(true)}
+                >
+                  <img src={receipt.base64Image} className="w-full h-full object-cover grayscale brightness-110 opacity-30 group-hover:opacity-70 group-hover:grayscale-0 transition-all duration-300" alt="ticket preview" />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 gap-1 font-bold text-[10px] uppercase tracking-widest bg-white/10 backdrop-blur-[1px] group-hover:bg-transparent transition-all">
+                    <Maximize2 size={16} className="mb-1" /> Pulsar para ampliar
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="h-4 flex overflow-hidden bg-white">
               {[...Array(30)].map((_, i) => (
                 <div key={i} className="w-4 h-4 bg-slate-950 rotate-45 translate-y-1/2 shrink-0"></div>
@@ -645,15 +689,25 @@ const App: React.FC = () => {
             >
               {step === AppStep.VIEW_ONLY ? "VOLVER AL INICIO" : "FINALIZAR Y GUARDAR"}
             </button>
-            {step === AppStep.SUMMARY && (
-              <button 
-                onClick={() => setStep(AppStep.SPLIT)}
-                className="w-full py-2 text-slate-500 font-bold uppercase tracking-widest text-[10px]"
-              >
-                Revisar Asignaciones
-              </button>
-            )}
           </div>
+        </div>
+      )}
+
+      {/* Modal Imagen Completa */}
+      {showFullImage && receipt?.base64Image && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200"
+          onClick={() => setShowFullImage(false)}
+        >
+          <div className="w-full flex justify-end mb-4">
+            <button className="bg-white/10 backdrop-blur-md p-3 rounded-full text-white active:scale-90 transition-transform">
+               <X size={24} />
+            </button>
+          </div>
+          <div className="relative max-w-full max-h-[80vh] overflow-auto rounded-xl shadow-2xl">
+            <img src={receipt.base64Image} className="max-w-full h-auto" alt="ticket full" />
+          </div>
+          <p className="text-slate-400 text-sm mt-6 font-medium">Toca en cualquier lugar para cerrar</p>
         </div>
       )}
     </div>
